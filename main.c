@@ -51,6 +51,7 @@ typedef struct erow {
 
 struct editorConfig{
   int cx, cy;
+  int rx;
   int row_offset;
   int col_offset;
   int screen_rows;
@@ -197,6 +198,19 @@ int getWindowSize(int* rows, int* cols)
 
 //=== Row operations ===//
 
+int editorRowCxToRx(erow *row, int cx)
+{
+  int rx = 0;
+  int j;
+  for(j = 0; j < cx; j++){
+    if(row->chars[j] == '\t'){
+      rx += (TAB_STOP - 1) - (rx % TAB_STOP);
+    }
+    rx++;
+  }
+  return rx;
+}
+
 void editorUpdateRow(erow* row)
 {
   int tabs = 0;
@@ -326,17 +340,23 @@ void editorDrawRows(struct abuf* ab)
 
 void editorScroll()
 {
+  E.rx = 0;
+
+  if(E.cy < E.num_rows) {
+    E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
+  }
+
   if(E.cy < E.row_offset){
     E.row_offset = E.cy;
   }
   if(E.cy >= E.row_offset + E.screen_rows){
     E.row_offset = E.cy - E.screen_rows + 1;
   }
-  if(E.cx < E.col_offset){
-    E.col_offset = E.cx;
+  if(E.rx < E.col_offset){
+    E.col_offset = E.rx;
   }
-  if(E.cx >= E.col_offset + E.screen_cols){
-    E.col_offset = E.cx - E.screen_cols + 1;
+  if(E.rx >= E.col_offset + E.screen_cols){
+    E.col_offset = E.rx - E.screen_cols + 1;
   }
 }
 
@@ -352,7 +372,7 @@ void editorRefreshScreen()
   editorDrawRows(&ab);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.row_offset) + 1, (E.cx - E.col_offset) + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.row_offset) + 1, (E.rx - E.col_offset) + 1);
   abAppend(&ab, buf, strlen(buf));
 
   abAppend(&ab, "\x1b[?25h", 6); //Show cursor
@@ -448,6 +468,7 @@ void initEditor()
 {
   E.cx = 0;
   E.cy = 0;
+  E.rx = 0;
   E.row_offset = 0;
   E.col_offset = 0;
   E.num_rows = 0;
