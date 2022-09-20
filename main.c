@@ -58,6 +58,7 @@ struct editorConfig{
   int screen_cols;
   int num_rows;
   erow* row;
+  char* filename;
   struct termios orig_termios;
 };
 
@@ -258,6 +259,9 @@ void editorAppendRow(char *s, size_t len)
 
 void editorOpen(char* filename)
 {
+  free(E.filename);
+  E.filename = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if(!fp) die("fopen");
 
@@ -332,9 +336,7 @@ void editorDrawRows(struct abuf* ab)
       abAppend(ab, &E.row[filerow].render[E.col_offset], len);
     }
     abAppend(ab, "\x1b[K", 3);
-    if(y < E.screen_rows - 1){
-      abAppend(ab, "\r\n", 2);
-    }
+    abAppend(ab, "\r\n", 2);
   }
 }
 
@@ -360,6 +362,29 @@ void editorScroll()
   }
 }
 
+void editorDrawStatusBar(struct abuf* ab)
+{
+  abAppend(ab, "\x1b[7m", 4);
+  char status[80], rstatus[80];
+
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+          E.filename ? E.filename : "[No Name]", E.num_rows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.num_rows);
+
+  if(len > E.screen_cols) len = E.screen_cols;
+  abAppend(ab, status, len);
+  while(len < E.screen_cols){
+    if(E.screen_cols - len == rlen){
+      abAppend(ab, rstatus, rlen);
+      break;
+    }else{
+      abAppend(ab, " ", 1);
+      len++;
+    }
+  }
+  abAppend(ab, "\x1b[m", 3);
+}
+
 void editorRefreshScreen()
 {
   editorScroll();
@@ -370,6 +395,7 @@ void editorRefreshScreen()
   abAppend(&ab, "\x1b[H", 3); //Move cursor to top left
 
   editorDrawRows(&ab);
+  editorDrawStatusBar(&ab);
 
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.row_offset) + 1, (E.rx - E.col_offset) + 1);
@@ -438,12 +464,20 @@ void editorProcessKeypress()
       break;
 
     case END_KEY:
-      E.cx = E.screen_cols - 1;
+      if(E.cy < E.num_rows){
+        E.cx = E.row[E.cy].size;
+      }
       break;
 
     case PAGE_UP:
     case PAGE_DOWN:
       {
+        if(c == PAGE_UP){
+          E.cy = E.row_offset;
+        } else if(c == PAGE_DOWN) {
+          E.cy = E.row_offset + E.screen_rows - 1;
+          if (E.cy > E.num_rows) E.cy = E.num_rows;
+        }
         int times = E.screen_rows;
         while(times--){
           editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -473,10 +507,10 @@ void initEditor()
   E.col_offset = 0;
   E.num_rows = 0;
   E.row = NULL;
+  E.filename = NULL;
 
-  if (getWindowSize(&E.screen_rows, &E.screen_cols) == -1){
-    die("getWindowSize");
-  }
+  if (getWindowSize(&E.screen_rows, &E.screen_cols) == -1)die("getWindowSize");
+  E.screen_rows -= 1;
 }
 
 //=== Main ===//
